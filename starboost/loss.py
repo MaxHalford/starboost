@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.special import expit as sigmoid
 
 from . import init
 
@@ -13,7 +12,7 @@ class L2Loss:
 
     It's gradient is
 
-    :math:`\\frac{\\partial L}{\\partial y_i} = 2p_i`
+    :math:`\\frac{\\partial L}{\\partial y_i} = p_i`
 
     Using `MSE` is equivalent to setting the `loss` parameter to `ls` in scikit-learn's
     `GradientBoostingRegressor.`
@@ -22,34 +21,30 @@ class L2Loss:
     def __call__(self, y_true, y_pred):
         """Returns the L2 loss.
 
-        .. doctest::
-
+        Example:
             >>> import starboost as sb
             >>> y_true = [10, 25, 0]
             >>> y_pred = [5, 30, 5]
             >>> sb.loss.L2Loss()(y_true, y_pred)
             25.0
-
         """
         return np.power(np.subtract(y_pred, y_true), 2).mean()
 
     def gradient(self, y_true, y_pred):
         """Returns the gradient of the L2 loss with respect to each prediction.
 
-        .. doctest::
-
+        Example:
             >>> import starboost as sb
             >>> y_true = [10, 25, 0]
             >>> y_pred = [5, 30, 5]
             >>> sb.loss.L2Loss().gradient(y_true, y_pred)
-            array([-10.,  10.,  10.])
-
+            array([-5,  5,  5])
         """
-        return 2. * np.subtract(y_pred, y_true)
+        return np.subtract(y_pred, y_true)
 
     @property
     def init_estimator(self):
-        """Returns ``init.MeanEstimator()``."""
+        """Returns ``starboost.init.MeanEstimator()``."""
         return init.MeanEstimator()
 
 
@@ -74,34 +69,30 @@ class L1Loss:
     def __call__(self, y_true, y_pred):
         """Returns the L1 loss.
 
-        .. doctest::
-
+        Example:
             >>> import starboost as sb
             >>> y_true = [0, 0, 1]
             >>> y_pred = [0.5, 0.5, 0.5]
             >>> sb.loss.L1Loss()(y_true, y_pred)
             0.5
-
         """
         return np.abs(np.subtract(y_pred, y_true)).mean()
 
     def gradient(self, y_true, y_pred):
         """Returns the gradient of the L1 loss with respect to each prediction.
 
-        .. doctest::
-
+        Example:
             >>> import starboost as sb
             >>> y_true = [0, 0, 1]
             >>> y_pred = [0.3, 0, 0.8]
             >>> sb.loss.L1Loss().gradient(y_true, y_pred)
             array([ 1.,  0., -1.])
-
         """
         return np.sign(np.subtract(y_pred, y_true))
 
     @property
     def init_estimator(self):
-        """Returns ``init.QuantileEstimator(alpha=0.5)``."""
+        """Returns ``starboost.init.QuantileEstimator(alpha=0.5)``."""
         return init.QuantileEstimator(alpha=0.5)
 
     def alter_direction(self, direction, y_true, y_pred, gradient):
@@ -124,17 +115,49 @@ class L1Loss:
 
 
 class LogLoss:
+    """Computes the logarithmic loss.
+
+    Mathematically, the L1 loss is defined as
+
+    :math:`L = -\\frac{1}{n} \\sum_i^n y_i log(p_i) + (1-y_i) log(1-p_i)`
+
+    It's gradient is
+
+    :math:`\\frac{\\partial L}{\\partial y_i} = sign(p_i - y_i)`
+
+    This loss works for binary classification as well as for multi-class cases (in which case the
+    loss is usually referred to as "cross-entropy").
+    """
 
     def __call__(self, y_true, y_pred):
-        loss = -((y_true * y_pred) - np.logaddexp(0., y_pred))
+        """Returns the log loss.
+
+        Example:
+            >>> import starboost as sb
+            >>> y_true = [0, 0, 1]
+            >>> y_pred = [0.5, 0.5, 0.5]
+            >>> sb.loss.LogLoss()(y_true, y_pred)
+            0.807410...
+        """
+        loss = -((np.multiply(y_true, y_pred)) - np.logaddexp(0., y_pred))
         return loss.mean()
 
     def gradient(self, y_true, y_pred):
-        return y_pred - y_true
+        """Returns the gradient of the log loss with respect to each prediction.
+
+        Example:
+            >>> import starboost as sb
+            >>> y_true = [0, 0, 1]
+            >>> y_pred = [0.5, 0.5, 0.5]
+            >>> sb.loss.LogLoss().gradient(y_true, y_pred)
+            array([ 0.5,  0.5, -0.5])
+        """
+        return np.subtract(y_pred, y_true)
 
     @property
     def init_estimator(self):
-        return init.LogOdds()
+        """Returns ``starboost.init.PriorProbabilityEstimator()``."""
+        return init.PriorProbabilityEstimator()
 
     def alter_direction(self, direction, y_true, y_pred, gradient):
         unique = np.unique(direction)

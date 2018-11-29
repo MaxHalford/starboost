@@ -45,6 +45,7 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
+    'sphinx.ext.napoleon'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -54,10 +55,8 @@ templates_path = ['_templates']
 # You can specify multiple suffix as a list of string:
 #
 # source_suffix = ['.rst', '.md']
-from recommonmark.parser import CommonMarkParser
-
 source_parsers = {
-    '.md': CommonMarkParser,
+   '.md': 'recommonmark.parser.CommonMarkParser',
 }
 
 source_suffix = ['.rst', '.md']
@@ -170,7 +169,10 @@ texinfo_documents = [
 html_theme_options = {
     'github_user': 'MaxHalford',
     'github_repo': 'starboost',
-    'nosidebar': True,
+    'github_banner': True,
+    'github_button': True,
+    'travis_button': True,
+    'fixed_sidebar': True,
     'font_family': 'Roboto Slab, serif;',
     'head_font_family': 'Roboto Slab, serif;'
 }

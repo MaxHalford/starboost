@@ -8,7 +8,19 @@ from sklearn import tree
 import starboost as sb
 
 
-class TestClassificationExamples(unittest.TestCase):
+class ScikitLearnLogOdds():
+
+    def fit(self, X, y):
+        pos = np.sum(y, axis=0)
+        neg = np.sum(1 - y, axis=0)
+        self.prior_ = np.log(pos / neg)
+        return self
+
+    def predict(self, X):
+        return np.full(fill_value=self.prior_, shape=(len(X), len(self.prior_)))
+
+
+class TestBoostingClassifier(unittest.TestCase):
 
     def test_sklearn_log_loss(self):
         """Tests against the output of scikit-learn's GradientBoostingClassifier using logloss."""
@@ -16,7 +28,8 @@ class TestClassificationExamples(unittest.TestCase):
 
         star = sb.BoostingClassifier(
             loss=sb.loss.LogLoss(),
-            base_estimator=tree.DecisionTreeRegressor(max_depth=3),
+            init_estimator=ScikitLearnLogOdds(),
+            base_estimator=tree.DecisionTreeRegressor(max_depth=3, random_state=42),
             n_estimators=30,
             learning_rate=0.1,
         )
@@ -27,8 +40,9 @@ class TestClassificationExamples(unittest.TestCase):
             max_depth=3,
             n_estimators=30,
             learning_rate=0.1,
+            random_state=42
         )
         scikit = scikit.fit(X, y)
 
-        for y1, y2 in zip(star.predict_proba_iter(X), scikit.staged_predict_proba(X)):
-            self.assertTrue(np.mean(np.abs(y1 - y2)) < 1e-5)
+        for y1, y2 in zip(star.iter_predict_proba(X), scikit.staged_predict_proba(X)):
+            self.assertTrue(np.mean(np.abs(y1 - y2)) < 1e-4)

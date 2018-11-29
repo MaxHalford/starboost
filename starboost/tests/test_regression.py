@@ -32,7 +32,7 @@ class ScikitLearnL1Loss(sb.loss.L1Loss):
 
 
 
-class TestRegressionExamples(unittest.TestCase):
+class TestBoostingRegressor(unittest.TestCase):
 
     def test_explained_ai_l2_loss_section_2_4(self):
         """Reproduces the results from https://explained.ai/gradient-boosting/L2-loss.html#sec:2.4"""
@@ -53,7 +53,7 @@ class TestRegressionExamples(unittest.TestCase):
         )
         model.fit(X, y)
 
-        for i, y_pred in enumerate(model.predict_iter(X, include_init=True)):
+        for i, y_pred in enumerate(model.iter_predict(X, include_init=True)):
             np.testing.assert_allclose(y_preds[i], y_pred, atol=0.1)
 
     def test_explained_ai_l1_loss_section_1_3(self):
@@ -75,7 +75,7 @@ class TestRegressionExamples(unittest.TestCase):
         )
         model.fit(X, y)
 
-        for i, y_pred in enumerate(model.predict_iter(X, include_init=True)):
+        for i, y_pred in enumerate(model.iter_predict(X, include_init=True)):
             np.testing.assert_allclose(y_preds[i], y_pred, atol=0.1)
 
     def test_sklearn_l2(self):
@@ -84,7 +84,7 @@ class TestRegressionExamples(unittest.TestCase):
 
         star = sb.BoostingRegressor(
             loss=sb.loss.L2Loss(),
-            base_estimator=tree.DecisionTreeRegressor(max_depth=3),
+            base_estimator=tree.DecisionTreeRegressor(max_depth=3, random_state=42),
             n_estimators=30,
             learning_rate=0.1,
         )
@@ -95,10 +95,11 @@ class TestRegressionExamples(unittest.TestCase):
             max_depth=3,
             n_estimators=30,
             learning_rate=0.1,
+            random_state=42
         )
         scikit = scikit.fit(X, y)
 
-        for y1, y2 in zip(star.predict_iter(X), scikit.staged_predict(X)):
+        for y1, y2 in zip(star.iter_predict(X), scikit.staged_predict(X)):
             self.assertTrue(np.mean(np.abs(y1 - y2)) < 1e-5)
 
     def test_sklearn_l1(self):
@@ -107,7 +108,7 @@ class TestRegressionExamples(unittest.TestCase):
 
         star = sb.BoostingRegressor(
             loss=ScikitLearnL1Loss(),
-            base_estimator=tree.DecisionTreeRegressor(max_depth=2),
+            base_estimator=tree.DecisionTreeRegressor(max_depth=2, random_state=42),
             n_estimators=5,
             learning_rate=0.1,
         )
@@ -118,8 +119,9 @@ class TestRegressionExamples(unittest.TestCase):
             max_depth=2,
             n_estimators=5,
             learning_rate=0.1,
+            random_state=42
         )
         scikit = scikit.fit(X, y)
 
-        for y1, y2 in zip(star.predict_iter(X), scikit.staged_predict(X)):
+        for y1, y2 in zip(star.iter_predict(X), scikit.staged_predict(X)):
             self.assertTrue(np.mean(np.abs(y1 - y2)) < 1e-5)

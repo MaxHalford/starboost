@@ -1,43 +1,40 @@
+import abc
+
 import numpy as np
 from sklearn import base
-from sklearn import utils
 
 
-class MeanEstimator(base.BaseEstimator, base.RegressorMixin):
+class SimpleEstimator(abc.ABC, base.BaseEstimator, base.RegressorMixin):
+
+    @abc.abstractmethod
+    def make_estimate(self, y):
+        pass
 
     def fit(self, X, y):
-        self.mean_ = y.mean()
+        self.estimate_ = self.make_estimate(y)
         return self
 
     def predict(self, X):
-        return np.full(fill_value=self.mean_, shape=len(X))
+        n, k = len(X), len(self.estimate_)
+        return np.full(fill_value=self.estimate_, shape=(n, k), dtype=np.float32)
 
 
-class QuantileEstimator(base.BaseEstimator, base.RegressorMixin):
+class MeanEstimator(SimpleEstimator):
+
+    def make_estimate(self, y):
+        return y.mean(axis=0)
+
+
+class QuantileEstimator(SimpleEstimator):
 
     def __init__(self, alpha):
         self.alpha = alpha
 
-    def fit(self, X, y, sample_weight=None):
-        if sample_weight is None:
-            sample_weight = np.ones_like(y)
-        self.quantile_ = utils.stats._weighted_percentile(y, sample_weight, self.alpha * 100.0)
-        return self
-
-    def predict(self, X):
-        return np.full(fill_value=self.quantile_, shape=len(X), dtype=np.float32)
+    def make_estimate(self, y):
+        return np.quantile(y, q=self.alpha, axis=0)
 
 
-class LogOdds(base.BaseEstimator, base.RegressorMixin):
+class PriorProbabilityEstimator(SimpleEstimator):
 
-    def __init__(self, scale=1.):
-        self.scale = scale
-
-    def fit(self, X, y):
-        pos = np.sum(y)
-        neg = np.sum(1 - y)
-        self.prior_ = self.scale * np.log(pos / neg)
-        return self
-
-    def predict(self, X):
-        return np.full(fill_value=self.prior_, shape=len(X), dtype=np.float32)
+    def make_estimate(self, y):
+        return np.sum(y, axis=0) / len(y)

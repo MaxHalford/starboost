@@ -1,16 +1,11 @@
-.. StarBoost documentation master file, created by
-   sphinx-quickstart on Mon Nov 26 17:22:54 2018.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 .. image:: https://docs.google.com/drawings/d/e/2PACX-1vQKggEpm0PGgmkB7LymYmHdptSFEwYXC5yecuph_0gGmZ5fW-bTIfowcDLHVHxjgKQTHq8Y21H0d5LF/pub?w=1277&h=375
-   :scale: 45 %
+   :height: 120px
+   :width: 400px
    :alt: logo
    :align: center
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
 
 .. automodule:: starboost
 
@@ -20,11 +15,13 @@ This is the documentation for StarBoost, a Python library that implements gradie
 
 **Doesn't scikit-learn already do that?**
 
-Indeed scikit-learn `implements gradient boosting <https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.GradientBoostingClassifier.html>`_, but the only supported weak learners are decision trees. In essence gradient boosting can be used with other weak learners than decision trees.
+Indeed scikit-learn `implements gradient boosting <https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.GradientBoostingClassifier.html>`_, but the only supported weak learner is decision tree. In essence gradient boosting can be used with other weak learners than decision trees.
 
 **What about XGBoost/LightGBM/CatBoost?**
 
 The mentionned libraries are the state of the art of gradient boosting decision trees (GBRT). They implement a specific version of gradient boosting that is tailored to decision trees. StarBoost's purpose isn't to compete with them. Instead it's goal is to implement a generic gradient boosting algorithm that works with any weak learner.
+
+A focus of StarBoost is to keep the code readable and commented, instead of obfuscating the algorithm under a pile of tangled code.
 
 **What's a weak learner?**
 
@@ -40,7 +37,7 @@ Barring any weird Python setup, you simply have to run ``pip install starboost``
 
 **How do I use it?**
 
-The following snippet shows a very basic usage of StarBoost.
+The following snippet shows a very basic usage of StarBoost. Please check out the `examples directory on GitHub <https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.GradientBoostingClassifier.html>`_ for comprehensive examples.
 
 .. code-block:: python
 
@@ -48,10 +45,10 @@ The following snippet shows a very basic usage of StarBoost.
     from sklearn import tree
     import starboost as sb
 
-    X, y = datasets.load_boston(X, return_X_y=True)
+    X, y = datasets.load_boston(return_X_y=True)
 
-    model = sb.GradientBoostingRegressor(
-        base_estimator=tree.DecisionTreeRegressor(max_depth=3)
+    model = sb.BoostingRegressor(
+        base_estimator=tree.DecisionTreeRegressor(max_depth=3),
         n_estimators=30,
         learning_rate=0.1
     )
@@ -60,18 +57,12 @@ The following snippet shows a very basic usage of StarBoost.
 
     y_pred = model.predict(X)
 
-**Where can I find a list of all the possible parameters?**
-
-Please check out the :ref:`api` section.
-
-**Are there any benchmarks?**
-
-Yes, TODO. There are also some unit tests that proof check the outputs.
-
 **What are you planning on doing next?**
 
+- Logging the progress
 - Handling sample weights
 - Implement more loss functions
+- Make it faster
 - Newton boosting (taking into account the information from the Hessian)
 - Learning to rank
 
@@ -81,30 +72,44 @@ As you might already know, in programming the star symbol ``*`` often refers to 
 
 .. _api:
 
-===
-API
-===
-
---------
 Boosting
---------
+========
+
+Regression
+----------
 
 .. autoclass:: BoostingRegressor
-    :members:
+    :members: fit, predict, iter_predict
+
+Classification
+--------------
 
 .. autoclass:: BoostingClassifier
-    :members:
+    :members: fit, predict, predict_proba, iter_predict, iter_predict_proba
 
-------
 Losses
-------
+======
+
+L1 loss
+-------
 
 .. autoclass:: starboost.loss.L1Loss
     :members:
 
     .. automethod:: __call__
 
+L2 loss
+-------
+
 .. autoclass:: starboost.loss.L2Loss
+    :members:
+
+    .. automethod:: __call__
+
+Log loss
+--------
+
+.. autoclass:: starboost.loss.LogLoss
     :members:
 
     .. automethod:: __call__
