@@ -23,6 +23,8 @@ install:
 
 script:
   - pytest
+  - travis-sphinx build
 
 after_success:
   - coveralls
+  - travis-sphinx deploy
