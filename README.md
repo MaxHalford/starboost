@@ -26,7 +26,7 @@
 <br/>
 
 <div align="center">
-Please check out the <a href="">website</a> if you're looking for the documentation!
+Please check out the <a href="https://maxhalford.github.io/starboost/">website</a> if you're looking for the documentation!
 </div>
 
 **What is this?**
