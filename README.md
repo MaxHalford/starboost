@@ -4,10 +4,6 @@
 </div>
 
 <div align="center">
-  <!-- godoc -->
-  <a href="https://godoc.org/github.com/MaxHalford/starboost">
-    <img src="https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square" alt="godoc" />
-  </a>
   <!-- Build status -->
   <a href="https://travis-ci.org/MaxHalford/starboost">
     <img src="https://img.shields.io/travis/MaxHalford/starboost/master.svg?style=flat-square" alt="build_status" />

@@ -23,7 +23,7 @@ install:
 
 script:
   - pytest
-  - travis-sphinx build
+  - travis-sphinx build -s docs/
 
 after_success:
   - coveralls
