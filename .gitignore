@@ -1,6 +1,7 @@
 .ipynb_checkpoints
 .pytest_cache
 *.csv
+*.csv.gz
 *.pyc
 *.ipynb
 

@@ -66,6 +66,8 @@ class BaseBoosting(abc.ABC, base.BaseEstimator):
         self.init_estimator = self.init_estimator.fit(X, y)
         y_pred = self.init_estimator.predict(X)
 
+        X_idx_sorted = np.asfortranarray(np.argsort(X, axis=0), dtype=np.int32)
+
         # We keep training weak learners until we reach n_estimators or early stopping occurs
         for _ in range(self.n_estimators):
 

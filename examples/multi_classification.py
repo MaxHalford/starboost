@@ -14,7 +14,7 @@ def micro_f1_score(y_true, y_pred):
 
 model = sb.BoostingClassifier(
     loss=sb.loss.LogLoss(),
-    base_estimator=tree.DecisionTreeRegressor(max_depth=3),
+    base_estimator=tree.DecisionTreeRegressor(max_depth=3, presort=True),
     n_estimators=10,
     init_estimator=sb.init.PriorProbabilityEstimator(),
     learning_rate=0.1,

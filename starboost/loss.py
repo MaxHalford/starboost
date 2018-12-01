@@ -102,7 +102,7 @@ class L1Loss:
         according residuals will in fact minimize the overall mean absolute error much faster.
 
         This is exactly the same procedure scikit-learn uses to modify the leaves of decision trees
-        in ``GradientBoostingRegressor``. However this procedure is more generic and works any
+        in ``GradientBoostingRegressor``. However this procedure is more generic and works with any
         kind of weak learner.
         """
         resi = y_true - y_pred

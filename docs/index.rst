@@ -19,7 +19,7 @@ Indeed scikit-learn `implements gradient boosting <https://scikit-learn.org/stab
 
 **What about XGBoost/LightGBM/CatBoost?**
 
-The mentionned libraries are the state of the art of gradient boosting decision trees (GBRT). They implement a specific version of gradient boosting that is tailored to decision trees. StarBoost's purpose isn't to compete with them. Instead it's goal is to implement a generic gradient boosting algorithm that works with any weak learner.
+The mentioned libraries are the state of the art of gradient boosting decision trees (GBRT). They implement a specific version of gradient boosting that is tailored to decision trees. StarBoost's purpose isn't to compete with them. Instead it's goal is to implement a generic gradient boosting algorithm that works with any weak learner.
 
 A focus of StarBoost is to keep the code readable and commented, instead of obfuscating the algorithm under a pile of tangled code.
 
