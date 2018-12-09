@@ -93,7 +93,7 @@ Losses
 L1 loss
 -------
 
-.. autoclass:: starboost.loss.L1Loss
+.. autoclass:: starboost.losses.L1Loss
     :members:
 
     .. automethod:: __call__
@@ -101,7 +101,7 @@ L1 loss
 L2 loss
 -------
 
-.. autoclass:: starboost.loss.L2Loss
+.. autoclass:: starboost.losses.L2Loss
     :members:
 
     .. automethod:: __call__
@@ -109,7 +109,7 @@ L2 loss
 Log loss
 --------
 
-.. autoclass:: starboost.loss.LogLoss
+.. autoclass:: starboost.losses.LogLoss
     :members:
 
     .. automethod:: __call__

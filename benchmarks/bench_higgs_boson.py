@@ -52,7 +52,7 @@ val_scores = collections.defaultdict(list)
 metric = metrics.mean_squared_error
 
 model = sb.BoostingRegressor(
-    loss=sb.loss.L2Loss(),
+    loss=sb.losses.L2Loss(),
     base_estimator=tree.DecisionTreeRegressor(max_depth=MAX_DEPTH, presort=True),
     n_estimators=N_ESTIMATORS,
     learning_rate=LEARNING_RATE,
