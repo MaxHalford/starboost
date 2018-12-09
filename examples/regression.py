@@ -14,8 +14,9 @@ def rmse(y_true, y_pred):
     return metrics.mean_squared_error(y_true, y_pred) ** 0.5
 
 model = sb.BoostingRegressor(
-    loss=sb.loss.L2Loss(),
+    loss=sb.losses.L2Loss(),
     base_estimator=tree.DecisionTreeRegressor(max_depth=3, presort=True),
+    tree_flavor=True,
     n_estimators=30,
     init_estimator=linear_model.LinearRegression(),
     learning_rate=0.1,

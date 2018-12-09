@@ -1,28 +1,34 @@
 import abc
 import collections
+import copy
+import itertools
 import warnings
 
 import numpy as np
 from scipy.special import expit as sigmoid
 from sklearn import base
+from sklearn import ensemble
 from sklearn import preprocessing
 from sklearn import utils
 
-from . import loss
+from . import losses
 
 
 warnings.simplefilter('ignore', np.RankWarning)
 
 
-class BaseBoosting(abc.ABC, base.BaseEstimator):
+class BaseBoosting(abc.ABC, ensemble.BaseEnsemble):
     """Implements logic common to all other boosting classes."""
-    def __init__(self, loss=None, base_estimator=None, n_estimators=30, init_estimator=None,
-                 learning_rate=0.1, row_sampling=1.0, col_sampling=1.0, eval_metric=None,
-                 early_stopping_rounds=None, random_state=None):
+    def __init__(self, loss=None, base_estimator=None, tree_flavor=False, n_estimators=30,
+                 init_estimator=None, line_searcher=None, learning_rate=0.1, row_sampling=1.0,
+                 col_sampling=1.0, eval_metric=None, early_stopping_rounds=None, random_state=None):
         self.loss = loss or self._default_loss
         self.base_estimator = base_estimator
         self.n_estimators = n_estimators
-        self.init_estimator = init_estimator or self.loss.init_estimator
+        self.init_estimator = init_estimator or self.loss.default_init_estimator
+        self.line_searcher = line_searcher
+        if self.line_searcher is None and tree_flavor:
+            self.line_searcher = self.loss.tree_line_searcher
         self.learning_rate = learning_rate
         self.row_sampling = row_sampling
         self.col_sampling = col_sampling
@@ -58,15 +64,13 @@ class BaseBoosting(abc.ABC, base.BaseEstimator):
             y = y.reshape(-1, 1)
 
         self.estimators_ = []
-        self.alterations_ = []
+        self.line_searchers_ = []
         self.columns_ = []
         self.eval_scores_ = [] if eval_set else None
 
         # Use init_estimator for the first fit
         self.init_estimator = self.init_estimator.fit(X, y)
         y_pred = self.init_estimator.predict(X)
-
-        X_idx_sorted = np.asfortranarray(np.argsort(X, axis=0), dtype=np.int32)
 
         # We keep training weak learners until we reach n_estimators or early stopping occurs
         for _ in range(self.n_estimators):
@@ -95,54 +99,35 @@ class BaseBoosting(abc.ABC, base.BaseEstimator):
             if cols is not None:
                 X_fit = X_fit[:, cols]
 
-            # We have to memorise which columns we used so that we can produce the correct
-            # predictions at test time
-            self.columns_.append(cols)
-
             # Train a base model to fit the negative gradients
             estimators = []
-            directions = []
-            alterations = []
+            line_searchers = []
 
             for i, gradient in enumerate(gradients.T):
 
+                # Fit a weak learner to the negative gradient of the loss function
                 estimator = base.clone(self.base_estimator)
                 estimator = estimator.fit(X_fit, -gradient if rows is None else -gradient[rows])
+                estimators.append(estimator)
+
+                # Estimate the descent direction using the weak learner
                 direction = estimator.predict(X if cols is None else X[:, cols])
 
-                # Depending on the loss the directions might need to be corrected,
-                # which is the case for MSE but not for MAE
-                if hasattr(self.loss, 'alter_direction'):
-                    new_direction = self.loss.alter_direction(
-                        direction=direction,
-                        y_true=y[:, i],
-                        y_pred=y_pred[:, i],
-                        gradient=gradient
-                    )
-                    # The thing is that we also need to be able to alter the directionss at test
-                    # time. Gradient boosting implementations usually handle this by tinkering with
-                    # the base learners. This works fine with trees because the leaves can be
-                    # modified in place; however this doesn't necessarily work with other models.
-                    # The trick is to fit a polynomial between the old directions and the new one.
-                    # We can then store polynomial and use them at test time to alter the
-                    # directions.
-                    unique, indices = np.unique(direction, return_index=True)
-                    coefs = np.polyfit(unique, new_direction[indices], deg=len(unique)-1)
-                    alteration = np.poly1d(coefs)
-                    direction = new_direction
-                else:
-                    alteration = None
+                # Apply line search if a line searcher has been provided
+                if self.line_searcher:
+                    line_searcher = copy.copy(self.line_searcher)
+                    line_searcher = line_searcher.fit(y[:, i], y_pred[:, i], gradient, direction)
+                    line_searchers.append(line_searcher)
+                    direction = line_searcher.update(direction)
 
-                estimators.append(estimator)
-                directions.append(direction)
-                alterations.append(alteration)
-
-            for i, direction in enumerate(directions):
+                # Move the predictions along the estimated descent direction
                 y_pred[:, i] += self.learning_rate * direction
 
             # Store the estimator and the step
             self.estimators_.append(estimators)
-            self.alterations_.append(alterations)
+            if line_searchers:
+                self.line_searchers_.append(line_searchers)
+            self.columns_.append(cols)
 
             # We're now at the end of a round so we can evaluate the model on the validation set
             if not eval_set:
@@ -174,9 +159,12 @@ class BaseBoosting(abc.ABC, base.BaseEstimator):
         if include_init:
             yield y_pred
 
-        for estimators, alterations, cols in zip(self.estimators_, self.alterations_, self.columns_):
+        for estimators, line_searchers, cols in itertools.zip_longest(self.estimators_,
+                                                                      self.line_searchers_,
+                                                                      self.columns_):
 
-            for i, (estimator, alteration) in enumerate(zip(estimators, alterations)):
+            for i, (estimator, line_searcher) in enumerate(itertools.zip_longest(estimators,
+                                                                                 line_searchers or [])):
 
                 # If we used column sampling then we have to make sure the columns of X are arranged
                 # in the correct order
@@ -185,10 +173,11 @@ class BaseBoosting(abc.ABC, base.BaseEstimator):
                 else:
                     direction = estimator.predict(X[:, cols])
 
-                if alteration:
-                    direction = alteration(direction)
+                if line_searcher:
+                    direction = line_searcher.update(direction)
 
                 y_pred[:, i] += self.learning_rate * direction
+
             yield y_pred
 
     def predict(self, X):
@@ -212,18 +201,25 @@ class BoostingRegressor(BaseBoosting, base.RegressorMixin):
     """Gradient boosting for regression.
 
     Arguments:
-        loss (class, default=starboost.loss.L2Loss)
+        loss (starboost.losses.Loss, default=starboost.loss.L2Loss)
             The loss function that will be optimized. At every stage a weak learner will be fit to
             the negative gradient of the loss. The provided value must be a class that at the very
             least implements a ``__call__`` method and a ``gradient`` method.
         base_estimator (sklearn.base.RegressorMixin, default=None): The weak learner. This must be
             a regression model, even when using ``BoostingClassifier``.
+        tree_flavor (bool, default=False): Indicates if the provided ``base_estimator`` is a tree
+            model or not. Various boosting optimizations specific to trees can be made to improve
+            the overall performance.
         n_estimators (int, default=30): The maximum number of weak learners to train. The final
             number of trained weak learners will be lower than ``n_estimators`` if early stopping
             happens.
         init_estimator (sklearn.base.BaseEstimator, default=None): The estimator used to make the
             initial guess. If ``None`` then the ``init_estimator`` property from the ``loss`` will
             be used.
+        line_searcher (starboost.line_searchers.LineSearcher, default=None): A line searcher which
+            can be used to find the optimal step size during gradient descent. If you've set
+            ``tree_flavor`` to ``True`` and are using one of StarBoost's losses then an optimal
+            line searcher will be used, meaning you safely set this field to ``None``.
         learning_rate (float, default=0.1): The learning rate shrinks the contribution of each tree.
             Specifically the descent direction estimated by each weak learner will be multiplied by
             ``learning_rate``. There is a trade-off between learning_rate and ``n_estimators``.
@@ -242,7 +238,7 @@ class BoostingRegressor(BaseBoosting, base.RegressorMixin):
 
     @property
     def _default_loss(self):
-        return loss.L2Loss()
+        return losses.L2Loss()
 
     def iter_predict(self, X, include_init=False):
         for y_pred in super().iter_predict(X, include_init=include_init):
@@ -256,21 +252,28 @@ def softmax(x):
 
 
 class BoostingClassifier(BaseBoosting, base.ClassifierMixin):
-    """Gradient boosting for classification.
+    """Gradient boosting for regression.
 
     Arguments:
-        loss (class, default=starboost.loss.LogLoss)
+        loss (starboost.losses.Loss, default=starboost.loss.L2Loss)
             The loss function that will be optimized. At every stage a weak learner will be fit to
             the negative gradient of the loss. The provided value must be a class that at the very
             least implements a ``__call__`` method and a ``gradient`` method.
         base_estimator (sklearn.base.RegressorMixin, default=None): The weak learner. This must be
             a regression model, even when using ``BoostingClassifier``.
+        tree_flavor (bool, default=False): Indicates if the provided ``base_estimator`` is a tree
+            model or not. Various boosting optimizations specific to trees can be made to improve
+            the overall performance.
         n_estimators (int, default=30): The maximum number of weak learners to train. The final
             number of trained weak learners will be lower than ``n_estimators`` if early stopping
             happens.
         init_estimator (sklearn.base.BaseEstimator, default=None): The estimator used to make the
             initial guess. If ``None`` then the ``init_estimator`` property from the ``loss`` will
             be used.
+        line_searcher (starboost.line_searchers.LineSearcher, default=None): A line searcher which
+            can be used to find the optimal step size during gradient descent. If you've set
+            ``tree_flavor`` to ``True`` and are using one of StarBoost's losses then an optimal
+            line searcher will be used, meaning you safely set this field to ``None``.
         learning_rate (float, default=0.1): The learning rate shrinks the contribution of each tree.
             Specifically the descent direction estimated by each weak learner will be multiplied by
             ``learning_rate``. There is a trade-off between learning_rate and ``n_estimators``.
@@ -291,7 +294,7 @@ class BoostingClassifier(BaseBoosting, base.ClassifierMixin):
 
     @property
     def _default_loss(self):
-        return loss.LogLoss()
+        return losses.LogLoss()
 
     def fit(self, X, y, eval_set=None):
         binarizer = preprocessing.LabelBinarizer(sparse_output=False).fit(y)

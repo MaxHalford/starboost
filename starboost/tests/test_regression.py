@@ -9,7 +9,7 @@ from sklearn import utils
 import starboost as sb
 
 
-class ScikitLearnL1Loss(sb.loss.L1Loss):
+class ScikitLearnL1Loss(sb.losses.L1Loss):
     """scikit-learn does two things different than StarBoost for L1 regression:
 
     - the zeros from the gradient are replaced with -1s
@@ -21,15 +21,14 @@ class ScikitLearnL1Loss(sb.loss.L1Loss):
         np.place(sign, sign==0, -1)
         return sign
 
-    def alter_direction(self, direction, y_true, y_pred, gradient):
-        resi = y_true - y_pred
-        unique = np.unique(direction)
-        repl = {}
-        for u in unique:
-            diff = resi[direction == u]
-            repl[u] = utils.stats._weighted_percentile(diff, np.ones_like(diff), percentile=50)
-        return np.fromiter((repl[u] for u in direction), direction.dtype, count=len(direction))
+    @property
+    def tree_line_searcher(self):
 
+        def update_leaf(y_true, y_pred, gradient):
+            residual = y_true - y_pred
+            return utils.stats._weighted_percentile(residual, np.ones_like(residual), percentile=50)
+
+        return sb.line_searchers.LeafLineSearcher(update_leaf=update_leaf)
 
 
 class TestBoostingRegressor(unittest.TestCase):
@@ -46,8 +45,9 @@ class TestBoostingRegressor(unittest.TestCase):
         ]
 
         model = sb.BoostingRegressor(
-            loss=sb.loss.L2Loss(),
+            loss=sb.losses.L2Loss(),
             base_estimator=tree.DecisionTreeRegressor(max_depth=1),
+            tree_flavor=True,
             n_estimators=3,
             learning_rate=1.0,
         )
@@ -68,8 +68,9 @@ class TestBoostingRegressor(unittest.TestCase):
         ]
 
         model = sb.BoostingRegressor(
-            loss=sb.loss.L1Loss(),
+            loss=sb.losses.L1Loss(),
             base_estimator=tree.DecisionTreeRegressor(max_depth=1),
+            tree_flavor=True,
             n_estimators=3,
             learning_rate=1.0,
         )
@@ -83,8 +84,9 @@ class TestBoostingRegressor(unittest.TestCase):
         X, y = datasets.load_boston(return_X_y=True)
 
         star = sb.BoostingRegressor(
-            loss=sb.loss.L2Loss(),
+            loss=sb.losses.L2Loss(),
             base_estimator=tree.DecisionTreeRegressor(max_depth=3, random_state=42),
+            tree_flavor=True,
             n_estimators=30,
             learning_rate=0.1,
         )
@@ -109,6 +111,7 @@ class TestBoostingRegressor(unittest.TestCase):
         star = sb.BoostingRegressor(
             loss=ScikitLearnL1Loss(),
             base_estimator=tree.DecisionTreeRegressor(max_depth=2, random_state=42),
+            tree_flavor=True,
             n_estimators=5,
             learning_rate=0.1,
         )

@@ -27,9 +27,10 @@ class TestBoostingClassifier(unittest.TestCase):
         X, y = datasets.load_breast_cancer(return_X_y=True)
 
         star = sb.BoostingClassifier(
-            loss=sb.loss.LogLoss(),
+            loss=sb.losses.LogLoss(),
             init_estimator=ScikitLearnLogOdds(),
             base_estimator=tree.DecisionTreeRegressor(max_depth=3, random_state=42),
+            tree_flavor=True,
             n_estimators=30,
             learning_rate=0.1,
         )

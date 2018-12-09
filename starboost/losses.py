@@ -1,9 +1,32 @@
+import abc
+
 import numpy as np
 
 from . import init
+from . import line_searchers
 
 
-class L2Loss:
+class Loss(abc.ABC):
+
+    @abc.abstractmethod
+    def __call__(self, y_true, y_pred):
+        pass
+
+    @abc.abstractmethod
+    def gradient(self, y_true, y_pred):
+        pass
+
+    @property
+    @abc.abstractmethod
+    def default_init_estimator(self):
+        pass
+
+    @property
+    def tree_line_searcher(self):
+        return None
+
+
+class L2Loss(Loss):
     """Computes the L2 loss, also known as the mean squared error.
 
     Mathematically, the L2 loss is defined as
@@ -25,7 +48,7 @@ class L2Loss:
             >>> import starboost as sb
             >>> y_true = [10, 25, 0]
             >>> y_pred = [5, 30, 5]
-            >>> sb.loss.L2Loss()(y_true, y_pred)
+            >>> sb.losses.L2Loss()(y_true, y_pred)
             25.0
         """
         return np.power(np.subtract(y_pred, y_true), 2).mean()
@@ -37,18 +60,22 @@ class L2Loss:
             >>> import starboost as sb
             >>> y_true = [10, 25, 0]
             >>> y_pred = [5, 30, 5]
-            >>> sb.loss.L2Loss().gradient(y_true, y_pred)
+            >>> sb.losses.L2Loss().gradient(y_true, y_pred)
             array([-5,  5,  5])
         """
         return np.subtract(y_pred, y_true)
 
     @property
-    def init_estimator(self):
+    def default_init_estimator(self):
         """Returns ``starboost.init.MeanEstimator()``."""
         return init.MeanEstimator()
 
+    @property
+    def tree_line_searcher(self):
+        return None
 
-class L1Loss:
+
+class L1Loss(Loss):
     """Computes the L1 loss, also known as the mean absolute error.
 
     Mathematically, the L1 loss is defined as
@@ -73,7 +100,7 @@ class L1Loss:
             >>> import starboost as sb
             >>> y_true = [0, 0, 1]
             >>> y_pred = [0.5, 0.5, 0.5]
-            >>> sb.loss.L1Loss()(y_true, y_pred)
+            >>> sb.losses.L1Loss()(y_true, y_pred)
             0.5
         """
         return np.abs(np.subtract(y_pred, y_true)).mean()
@@ -85,17 +112,18 @@ class L1Loss:
             >>> import starboost as sb
             >>> y_true = [0, 0, 1]
             >>> y_pred = [0.3, 0, 0.8]
-            >>> sb.loss.L1Loss().gradient(y_true, y_pred)
+            >>> sb.losses.L1Loss().gradient(y_true, y_pred)
             array([ 1.,  0., -1.])
         """
         return np.sign(np.subtract(y_pred, y_true))
 
     @property
-    def init_estimator(self):
+    def default_init_estimator(self):
         """Returns ``starboost.init.QuantileEstimator(alpha=0.5)``."""
         return init.QuantileEstimator(alpha=0.5)
 
-    def alter_direction(self, direction, y_true, y_pred, gradient):
+    @property
+    def tree_line_searcher(self):
         """When using ``L1Loss`` the gradient descent procedure will chase the negative of
         ``L1Loss``'s gradient. The negative of the gradient is solely composed of 1s, -1s, and 0s.
         It turns out that replacing the estimated descent direction with the median of the
@@ -105,16 +133,13 @@ class L1Loss:
         in ``GradientBoostingRegressor``. However this procedure is more generic and works with any
         kind of weak learner.
         """
-        resi = y_true - y_pred
-        unique = np.unique(direction)
-        repl = {}
-        for u in unique:
-            diff = resi[direction == u]
-            repl[u] = np.median(diff)
-        return np.fromiter((repl[u] for u in direction), direction.dtype, count=len(direction))
+        def update_leaf(y_true, y_pred, gradient):
+            return np.median(y_true - y_pred)
+
+        return line_searchers.LeafLineSearcher(update_leaf=update_leaf)
 
 
-class LogLoss:
+class LogLoss(Loss):
     """Computes the logarithmic loss.
 
     Mathematically, the L1 loss is defined as
@@ -136,7 +161,7 @@ class LogLoss:
             >>> import starboost as sb
             >>> y_true = [0, 0, 1]
             >>> y_pred = [0.5, 0.5, 0.5]
-            >>> sb.loss.LogLoss()(y_true, y_pred)
+            >>> sb.losses.LogLoss()(y_true, y_pred)
             0.807410...
         """
         loss = -((np.multiply(y_true, y_pred)) - np.logaddexp(0., y_pred))
@@ -149,25 +174,22 @@ class LogLoss:
             >>> import starboost as sb
             >>> y_true = [0, 0, 1]
             >>> y_pred = [0.5, 0.5, 0.5]
-            >>> sb.loss.LogLoss().gradient(y_true, y_pred)
+            >>> sb.losses.LogLoss().gradient(y_true, y_pred)
             array([ 0.5,  0.5, -0.5])
         """
         return np.subtract(y_pred, y_true)
 
     @property
-    def init_estimator(self):
+    def default_init_estimator(self):
         """Returns ``starboost.init.PriorProbabilityEstimator()``."""
         return init.PriorProbabilityEstimator()
 
-    def alter_direction(self, direction, y_true, y_pred, gradient):
-        unique = np.unique(direction)
-        repl = {}
+    @property
+    def tree_line_searcher(self):
 
-        for u in unique:
-            residual = -gradient[direction == u]
-            y = y_true[direction == u]
-            numerator = np.sum(residual)
-            denominator = np.sum((y - residual) * (1 - y + residual))
-            repl[u] = (numerator / denominator) if denominator > 1e-150 else 0.
+        def update_leaf(y_true, y_pred, gradient):
+            numerator = np.sum(-gradient)
+            denominator = np.sum((y_true + gradient) * (1 - y_true - gradient))
+            return (numerator / denominator) if denominator > 1e-150 else 0.
 
-        return np.fromiter((repl[u] for u in direction), direction.dtype, count=len(direction))
+        return line_searchers.LeafLineSearcher(update_leaf=update_leaf)

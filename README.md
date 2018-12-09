@@ -31,7 +31,7 @@ This is StarBoost, a Python library that implements gradient boosting. Gradient 
 
 **Doesn't scikit-learn already do that?**
 
-Indeed scikit-learn [implements gradient boosting](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.GradientBoostingClassifier.html), but the only supported weak learner is decision tree. In essence gradient boosting can be used with other weak learners than decision trees.
+Indeed scikit-learn [implements gradient boosting](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.GradientBoostingClassifier.html), but the only supported weak learner is a decision tree. In essence gradient boosting can be used with other weak learners than decision trees.
 
 **What about XGBoost/LightGBM/CatBoost?**
 

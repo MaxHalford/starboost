@@ -113,3 +113,18 @@ Log loss
     :members:
 
     .. automethod:: __call__
+
+Line searchers
+==============
+
+During gradient descent the negative gradient of the loss function indicates the direction of descent. A line searcher can be used to determine how far to pursue the direction, or in other words the step size.
+
+Line search per leaf
+--------------------
+
+One of the reasons why gradient boosting is often used with decision trees is that optimal step sizes exist and are easy to compute.
+
+.. autoclass:: starboost.line_searchers.LeafLineSearcher
+    :members:
+
+    .. automethod:: __call__
