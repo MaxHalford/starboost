@@ -1,14 +1,16 @@
 import unittest
 
 import numpy as np
+from sklearn import base
 from sklearn import datasets
 from sklearn import ensemble
 from sklearn import tree
+from sklearn.utils import estimator_checks
 
 import starboost as sb
 
 
-class ScikitLearnLogOdds():
+class ScikitLearnLogOdds(base.BaseEstimator):
 
     def fit(self, X, y):
         pos = np.sum(y, axis=0)
@@ -22,6 +24,9 @@ class ScikitLearnLogOdds():
 
 class TestBoostingClassifier(unittest.TestCase):
 
+    def test_check_estimator(self):
+        estimator_checks.check_estimator(sb.BoostingClassifier)
+
     def test_sklearn_log_loss(self):
         """Tests against the output of scikit-learn's GradientBoostingClassifier using logloss."""
         X, y = datasets.load_breast_cancer(return_X_y=True)
@@ -30,7 +35,7 @@ class TestBoostingClassifier(unittest.TestCase):
             loss=sb.losses.LogLoss(),
             init_estimator=ScikitLearnLogOdds(),
             base_estimator=tree.DecisionTreeRegressor(max_depth=3, random_state=42),
-            tree_flavor=True,
+            base_estimator_is_tree=True,
             n_estimators=30,
             learning_rate=0.1,
         )
@@ -46,4 +51,4 @@ class TestBoostingClassifier(unittest.TestCase):
         scikit = scikit.fit(X, y)
 
         for y1, y2 in zip(star.iter_predict_proba(X), scikit.staged_predict_proba(X)):
-            self.assertTrue(np.mean(np.abs(y1 - y2)) < 1e-4)
+            np.testing.assert_allclose(y1, y2, rtol=1e-5)

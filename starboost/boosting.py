@@ -2,39 +2,39 @@ import abc
 import collections
 import copy
 import itertools
-import warnings
 
 import numpy as np
 from scipy.special import expit as sigmoid
 from sklearn import base
 from sklearn import ensemble
 from sklearn import preprocessing
+from sklearn import tree
 from sklearn import utils
 
 from . import losses
 
 
-warnings.simplefilter('ignore', np.RankWarning)
+__all__ = ['BoostingClassifier', 'BoostingRegressor']
 
 
 class BaseBoosting(abc.ABC, ensemble.BaseEnsemble):
     """Implements logic common to all other boosting classes."""
-    def __init__(self, loss=None, base_estimator=None, tree_flavor=False, n_estimators=30,
-                 init_estimator=None, line_searcher=None, learning_rate=0.1, row_sampling=1.0,
-                 col_sampling=1.0, eval_metric=None, early_stopping_rounds=None, random_state=None):
-        self.loss = loss or self._default_loss
+    def __init__(self, loss=None, base_estimator=None, base_estimator_is_tree=False,
+                 n_estimators=30, init_estimator=None, line_searcher=None, learning_rate=0.1,
+                 row_sampling=1.0, col_sampling=1.0, eval_metric=None, early_stopping_rounds=None,
+                 random_state=None):
+        self.loss = loss
         self.base_estimator = base_estimator
+        self.base_estimator_is_tree = base_estimator_is_tree
         self.n_estimators = n_estimators
-        self.init_estimator = init_estimator or self.loss.default_init_estimator
+        self.init_estimator = init_estimator
         self.line_searcher = line_searcher
-        if self.line_searcher is None and tree_flavor:
-            self.line_searcher = self.loss.tree_line_searcher
         self.learning_rate = learning_rate
         self.row_sampling = row_sampling
         self.col_sampling = col_sampling
-        self.eval_metric = eval_metric or loss
+        self.eval_metric = eval_metric
         self.early_stopping_rounds = early_stopping_rounds
-        self.rng = utils.check_random_state(random_state)
+        self.random_state = random_state
 
     @abc.abstractmethod
     def _transform_y_pred(self, y_pred):
@@ -49,48 +49,65 @@ class BaseBoosting(abc.ABC, ensemble.BaseEnsemble):
         """Fit a gradient boosting procedure to a dataset.
 
         Args:
-            X (array-like or sparse matrix of shape (n_samples, n_features)): The input samples.
-                The restrictions on the data depend on the weak learner.
-            y (array-like of shape (n_samples,)): Target values (strings or integers in
-                classification, real numbers in regression).
+            X (array-like or sparse matrix of shape (n_samples, n_features)): The training input
+                samples. Sparse matrices are accepted only if they are supported by the weak model.
+            y (array-like of shape (n_samples,)): The training target values (strings or integers
+                in classification, real numbers in regression).
             eval_set (tuple of length 2, optional, default=None): The evaluation set is a tuple
                 ``(X_val, y_val)``. It has to respect the same conventions as ``X`` and ``y``.
         Returns:
             self
         """
-        X = np.atleast_2d(X)
-        y = np.array(y)
+        # Verify the input parameters
+        base_estimator = self.base_estimator
+        base_estimator_is_tree = self.base_estimator_is_tree
+        if base_estimator is None:
+            base_estimator = tree.DecisionTreeRegressor(max_depth=1, random_state=self.random_state)
+            base_estimator_is_tree = True
+
+        if not isinstance(base_estimator, base.RegressorMixin):
+            raise ValueError('base_estimator must be a RegressorMixin')
+
+        loss = self.loss or self._default_loss
+
+        self.init_estimator_ = base.clone(self.init_estimator or loss.default_init_estimator)
+
+        eval_metric = self.eval_metric or loss
+
+        line_searcher = self.line_searcher
+        if line_searcher is None and base_estimator_is_tree:
+            line_searcher = loss.tree_line_searcher
+
+        self._rng = utils.check_random_state(self.random_state)
+
+        # At this point we assume the input data has been checked
         if y.ndim == 1:
             y = y.reshape(-1, 1)
 
+        # Instantiate some training variables
         self.estimators_ = []
         self.line_searchers_ = []
         self.columns_ = []
         self.eval_scores_ = [] if eval_set else None
 
         # Use init_estimator for the first fit
-        self.init_estimator = self.init_estimator.fit(X, y)
-        y_pred = self.init_estimator.predict(X)
+        self.init_estimator_.fit(X, y)
+        y_pred = self.init_estimator_.predict(X)
 
         # We keep training weak learners until we reach n_estimators or early stopping occurs
         for _ in range(self.n_estimators):
 
-            # Compute the gradients of the loss for the current prediction
-            gradients = self.loss.gradient(y, self._transform_y_pred(y_pred))
-
             # If row_sampling is lower than 1 then we're doing stochastic gradient descent
+            rows = None
             if self.row_sampling < 1:
                 n_rows = int(X.shape[0] * self.row_sampling)
-                rows = self.rng.choice(X.shape[0], n_rows, replace=False)
-            else:
-                rows = None
+                rows = self._rng.choice(X.shape[0], n_rows, replace=False)
 
             # If col_sampling is lower than 1 then we only use a subset of the features
+            cols = None
             if self.col_sampling < 1:
                 n_cols = int(X.shape[1] * self.col_sampling)
-                cols = self.rng.choice(X.shape[1], n_cols, replace=False)
-            else:
-                cols = None
+                cols = self._rng.choice(X.shape[1], n_cols, replace=False)
 
             # Subset X
             X_fit = X
@@ -99,14 +116,17 @@ class BaseBoosting(abc.ABC, ensemble.BaseEnsemble):
             if cols is not None:
                 X_fit = X_fit[:, cols]
 
-            # Train a base model to fit the negative gradients
+            # Compute the gradients of the loss for the current prediction
+            gradients = loss.gradient(y, self._transform_y_pred(y_pred))
+
+            # We will train one weak model per column in y
             estimators = []
             line_searchers = []
 
             for i, gradient in enumerate(gradients.T):
 
                 # Fit a weak learner to the negative gradient of the loss function
-                estimator = base.clone(self.base_estimator)
+                estimator = base.clone(base_estimator)
                 estimator = estimator.fit(X_fit, -gradient if rows is None else -gradient[rows])
                 estimators.append(estimator)
 
@@ -114,11 +134,11 @@ class BaseBoosting(abc.ABC, ensemble.BaseEnsemble):
                 direction = estimator.predict(X if cols is None else X[:, cols])
 
                 # Apply line search if a line searcher has been provided
-                if self.line_searcher:
-                    line_searcher = copy.copy(self.line_searcher)
-                    line_searcher = line_searcher.fit(y[:, i], y_pred[:, i], gradient, direction)
-                    line_searchers.append(line_searcher)
-                    direction = line_searcher.update(direction)
+                if line_searcher:
+                    ls = copy.copy(line_searcher)
+                    ls = ls.fit(y[:, i], y_pred[:, i], gradient, direction)
+                    line_searchers.append(ls)
+                    direction = ls.update(direction)
 
                 # Move the predictions along the estimated descent direction
                 y_pred[:, i] += self.learning_rate * direction
@@ -133,11 +153,11 @@ class BaseBoosting(abc.ABC, ensemble.BaseEnsemble):
             if not eval_set:
                 continue
             X_val, y_val = eval_set
-            self.eval_scores_.append(self.eval_metric(y_val, self.predict(X_val)))
+            self.eval_scores_.append(eval_metric(y_val, self.predict(X_val)))
 
             # Check for early stopping
             if self.early_stopping_rounds and len(self.eval_scores_) > self.early_stopping_rounds:
-                if self.eval_scores_[-1] > self.eval_scores_[-(self.early_stopping_rounds+1)]:
+                if self.eval_scores_[-1] > self.eval_scores_[-(self.early_stopping_rounds + 1)]:
                     break
 
         return self
@@ -147,13 +167,16 @@ class BaseBoosting(abc.ABC, ensemble.BaseEnsemble):
 
         Args:
             X (array-like or sparse matrix of shape (n_samples, n_features): The input samples.
-                The restrictions on the data depend on the weak learner.
+                Sparse matrices are accepted only if they are supported by the weak model.
             include_init (bool, default=False): If ``True`` then the prediction from
                 ``init_estimator`` will also be returned.
         Returns:
             iterator of arrays of shape (n_samples,) containing the predicted values at each stage
         """
-        y_pred = self.init_estimator.predict(X)
+        utils.validation.check_is_fitted(self, 'init_estimator_')
+        X = utils.check_array(X, accept_sparse=['csr', 'csc'], dtype=None, force_all_finite=False)
+
+        y_pred = self.init_estimator_.predict(X)
 
         # The user decides if the initial prediction should be included or not
         if include_init:
@@ -188,13 +211,12 @@ class BaseBoosting(abc.ABC, ensemble.BaseEnsemble):
 
         Arguments:
             X (array-like or sparse matrix of shape (n_samples, n_features)): The input samples.
-                The restrictions on the data depend on the weak learner.
+                Sparse matrices are accepted only if they are supported by the weak model.
 
         Returns:
             array of shape (n_samples,) containing the predicted values.
         """
-        y_preds = collections.deque(self.iter_predict(X), maxlen=1)
-        return y_preds.pop()
+        return collections.deque(self.iter_predict(X), maxlen=1).pop()
 
 
 class BoostingRegressor(BaseBoosting, base.RegressorMixin):
@@ -206,10 +228,10 @@ class BoostingRegressor(BaseBoosting, base.RegressorMixin):
             the negative gradient of the loss. The provided value must be a class that at the very
             least implements a ``__call__`` method and a ``gradient`` method.
         base_estimator (sklearn.base.RegressorMixin, default=None): The weak learner. This must be
-            a regression model, even when using ``BoostingClassifier``.
-        tree_flavor (bool, default=False): Indicates if the provided ``base_estimator`` is a tree
-            model or not. Various boosting optimizations specific to trees can be made to improve
-            the overall performance.
+            a regression model. If `None` then a decision stump will be used.
+        base_estimator_is_tree (bool, default=False): Indicates if the provided ``base_estimator``
+            is a tree model or not. Various boosting optimizations specific to trees can be made to
+            improve the overall performance.
         n_estimators (int, default=30): The maximum number of weak learners to train. The final
             number of trained weak learners will be lower than ``n_estimators`` if early stopping
             happens.
@@ -218,7 +240,7 @@ class BoostingRegressor(BaseBoosting, base.RegressorMixin):
             be used.
         line_searcher (starboost.line_searchers.LineSearcher, default=None): A line searcher which
             can be used to find the optimal step size during gradient descent. If you've set
-            ``tree_flavor`` to ``True`` and are using one of StarBoost's losses then an optimal
+            ``base_estimator_is_tree`` to ``True`` and are using one of StarBoost's losses then an optimal
             line searcher will be used, meaning you safely set this field to ``None``.
         learning_rate (float, default=0.1): The learning rate shrinks the contribution of each tree.
             Specifically the descent direction estimated by each weak learner will be multiplied by
@@ -240,13 +262,17 @@ class BoostingRegressor(BaseBoosting, base.RegressorMixin):
     def _default_loss(self):
         return losses.L2Loss()
 
+    def fit(self, X, y, eval_set=None):
+        X, y = utils.check_X_y(X, y, ['csr', 'csc'], dtype=None, force_all_finite=False)
+        return super().fit(X=X, y=y, eval_set=eval_set)
+
     def iter_predict(self, X, include_init=False):
         for y_pred in super().iter_predict(X, include_init=include_init):
             yield y_pred[:, 0]
 
 
 def softmax(x):
-    """Can be replaced once scipy 1.3 is released."""
+    """Can be replaced once scipy 1.3 is released, although numeric stability should be checked."""
     e_x = np.exp(x - np.max(x))
     return e_x / e_x.sum(axis=1)[:, None]
 
@@ -260,10 +286,11 @@ class BoostingClassifier(BaseBoosting, base.ClassifierMixin):
             the negative gradient of the loss. The provided value must be a class that at the very
             least implements a ``__call__`` method and a ``gradient`` method.
         base_estimator (sklearn.base.RegressorMixin, default=None): The weak learner. This must be
-            a regression model, even when using ``BoostingClassifier``.
-        tree_flavor (bool, default=False): Indicates if the provided ``base_estimator`` is a tree
-            model or not. Various boosting optimizations specific to trees can be made to improve
-            the overall performance.
+            a regression model, even though the task is classification. If `None` then a decision
+            stump will be used.
+        base_estimator_is_tree (bool, default=False): Indicates if the provided ``base_estimator``
+            is a tree model or not. Various boosting optimizations specific to trees can be made to
+            improve the overall performance.
         n_estimators (int, default=30): The maximum number of weak learners to train. The final
             number of trained weak learners will be lower than ``n_estimators`` if early stopping
             happens.
@@ -272,7 +299,7 @@ class BoostingClassifier(BaseBoosting, base.ClassifierMixin):
             be used.
         line_searcher (starboost.line_searchers.LineSearcher, default=None): A line searcher which
             can be used to find the optimal step size during gradient descent. If you've set
-            ``tree_flavor`` to ``True`` and are using one of StarBoost's losses then an optimal
+            ``base_estimator_is_tree`` to ``True`` and are using one of StarBoost's losses then an optimal
             line searcher will be used, meaning you safely set this field to ``None``.
         learning_rate (float, default=0.1): The learning rate shrinks the contribution of each tree.
             Specifically the descent direction estimated by each weak learner will be multiplied by
@@ -288,7 +315,7 @@ class BoostingClassifier(BaseBoosting, base.ClassifierMixin):
     """
 
     def _transform_y_pred(self, y_pred):
-        if self.n_classes_ > 2:
+        if len(self.classes_) > 2:
             return softmax(y_pred)
         return sigmoid(y_pred)
 
@@ -297,16 +324,27 @@ class BoostingClassifier(BaseBoosting, base.ClassifierMixin):
         return losses.LogLoss()
 
     def fit(self, X, y, eval_set=None):
-        binarizer = preprocessing.LabelBinarizer(sparse_output=False).fit(y)
-        self.n_classes_ = len(binarizer.classes_)
-        return super().fit(X=X, y=binarizer.transform(y), eval_set=eval_set)
+        # Check the inputs
+        X, y = utils.check_X_y(
+            X, y, ['csr', 'csc'], dtype=None, force_all_finite=False,
+            multi_output=True
+        )
+        utils.multiclass.check_classification_targets(y)
+        # We first encode the labels into integers starting from 0
+        self.encoder_ = preprocessing.LabelEncoder().fit(y)
+        y = self.encoder_.transform(y)
+        self.classes_ = self.encoder_.classes_
+        # Next we one-hot encode the labels
+        self.binarizer_ = preprocessing.LabelBinarizer(sparse_output=False).fit(y)
+        y = self.binarizer_.transform(y)
+        return super().fit(X=X, y=y, eval_set=eval_set)
 
     def iter_predict_proba(self, X, include_init=False):
         """Returns the predicted probabilities for ``X`` at every stage of the boosting procedure.
 
         Arguments:
             X (array-like or sparse matrix of shape (n_samples, n_features)): The input samples.
-                The restrictions on the data depend on the weak learner.
+                Sparse matrices are accepted only if they are supported by the weak model.
             include_init (bool, default=False): If ``True`` then the prediction from
                 ``init_estimator`` will also be returned.
 
@@ -314,14 +352,17 @@ class BoostingClassifier(BaseBoosting, base.ClassifierMixin):
             iterator of arrays of shape (n_samples, n_classes) containing the predicted
             probabilities at each stage
         """
-        probas = np.empty(shape=(len(X), self.n_classes_), dtype=np.float32)
+        utils.validation.check_is_fitted(self, 'init_estimator_')
+        X = utils.check_array(X, accept_sparse=['csr', 'csc'], dtype=None, force_all_finite=False)
+
+        probas = np.empty(shape=(len(X), len(self.classes_)), dtype=np.float64)
 
         for y_pred in super().iter_predict(X, include_init=include_init):
-            if self.n_classes_ == 2:
-                probas[:, 1] = self._transform_y_pred(y_pred[:, 0])
-                probas[:, 0] = 1 - probas[:, 1]
+            if len(self.classes_) == 2:
+                probas[:, 1] = sigmoid(y_pred[:, 0])
+                probas[:, 0] = 1. - probas[:, 1]
             else:
-                probas = self._transform_y_pred(y_pred)
+                probas[:] = softmax(y_pred)
             yield probas
 
     def iter_predict(self, X, include_init=False):
@@ -329,7 +370,7 @@ class BoostingClassifier(BaseBoosting, base.ClassifierMixin):
 
         Arguments:
             X (array-like or sparse matrix of shape (n_samples, n_features)): The input samples.
-                The restrictions on the data depend on the weak learner.
+                Sparse matrices are accepted only if they are supported by the weak model.
             include_init (bool, default=False): If ``True`` then the prediction from
                 ``init_estimator`` will also be returned.
 
@@ -338,17 +379,16 @@ class BoostingClassifier(BaseBoosting, base.ClassifierMixin):
             each stage.
         """
         for probas in self.iter_predict_proba(X, include_init=include_init):
-            yield np.argmax(probas, axis=1)
+            yield self.encoder_.inverse_transform(np.argmax(probas, axis=1))
 
     def predict_proba(self, X):
         """Returns the predicted probabilities for ``X``.
 
         Arguments:
             X (array-like or sparse matrix of shape (n_samples, n_features)): The input samples.
-                The restrictions on the data depend on the weak learner.
+                Sparse matrices are accepted only if they are supported by the weak model.
 
         Returns:
             array of shape (n_samples, n_classes) containing the predicted probabilities.
         """
-        probas = collections.deque(self.iter_predict_proba(X), maxlen=1)
-        return probas.pop()
+        return collections.deque(self.iter_predict_proba(X), maxlen=1).pop()

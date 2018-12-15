@@ -3,6 +3,9 @@ import abc
 import numpy as np
 
 
+__all__ = ['LeafLineSearcher']
+
+
 class LineSearcher(abc.ABC):
 
     @abc.abstractmethod

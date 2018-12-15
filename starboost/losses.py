@@ -6,6 +6,9 @@ from . import init
 from . import line_searchers
 
 
+__all__ = ['L2Loss', 'L1Loss', 'LogLoss']
+
+
 class Loss(abc.ABC):
 
     @abc.abstractmethod
@@ -122,6 +125,9 @@ class L1Loss(Loss):
         """Returns ``starboost.init.QuantileEstimator(alpha=0.5)``."""
         return init.QuantileEstimator(alpha=0.5)
 
+    def _update_leaf(self, y_true, y_pred, gradient):
+        return np.median(y_true - y_pred)
+
     @property
     def tree_line_searcher(self):
         """When using ``L1Loss`` the gradient descent procedure will chase the negative of
@@ -133,10 +139,7 @@ class L1Loss(Loss):
         in ``GradientBoostingRegressor``. However this procedure is more generic and works with any
         kind of weak learner.
         """
-        def update_leaf(y_true, y_pred, gradient):
-            return np.median(y_true - y_pred)
-
-        return line_searchers.LeafLineSearcher(update_leaf=update_leaf)
+        return line_searchers.LeafLineSearcher(update_leaf=self._update_leaf)
 
 
 class LogLoss(Loss):
@@ -184,12 +187,11 @@ class LogLoss(Loss):
         """Returns ``starboost.init.PriorProbabilityEstimator()``."""
         return init.PriorProbabilityEstimator()
 
+    def _update_leaf(self, y_true, y_pred, gradient):
+        numerator = np.sum(-gradient)
+        denominator = np.sum((y_true + gradient) * (1 - y_true - gradient))
+        return (numerator / denominator) if denominator > 1e-150 else 0.
+
     @property
     def tree_line_searcher(self):
-
-        def update_leaf(y_true, y_pred, gradient):
-            numerator = np.sum(-gradient)
-            denominator = np.sum((y_true + gradient) * (1 - y_true - gradient))
-            return (numerator / denominator) if denominator > 1e-150 else 0.
-
-        return line_searchers.LeafLineSearcher(update_leaf=update_leaf)
+        return line_searchers.LeafLineSearcher(update_leaf=self._update_leaf)

@@ -5,6 +5,7 @@ from sklearn import datasets
 from sklearn import ensemble
 from sklearn import tree
 from sklearn import utils
+from sklearn.utils import estimator_checks
 
 import starboost as sb
 
@@ -18,7 +19,7 @@ class ScikitLearnL1Loss(sb.losses.L1Loss):
 
     def gradient(self, y_true, y_pred):
         sign = np.sign(y_pred - y_true)
-        np.place(sign, sign==0, -1)
+        np.place(sign, sign == 0, -1.)
         return sign
 
     @property
@@ -32,6 +33,9 @@ class ScikitLearnL1Loss(sb.losses.L1Loss):
 
 
 class TestBoostingRegressor(unittest.TestCase):
+
+    def test_check_estimator(self):
+        estimator_checks.check_estimator(sb.BoostingRegressor)
 
     def test_explained_ai_l2_loss_section_2_4(self):
         """Reproduces the results from https://explained.ai/gradient-boosting/L2-loss.html#sec:2.4"""
@@ -47,14 +51,14 @@ class TestBoostingRegressor(unittest.TestCase):
         model = sb.BoostingRegressor(
             loss=sb.losses.L2Loss(),
             base_estimator=tree.DecisionTreeRegressor(max_depth=1),
-            tree_flavor=True,
+            base_estimator_is_tree=True,
             n_estimators=3,
             learning_rate=1.0,
         )
         model.fit(X, y)
 
-        for i, y_pred in enumerate(model.iter_predict(X, include_init=True)):
-            np.testing.assert_allclose(y_preds[i], y_pred, atol=0.1)
+        for y1, y2 in zip(model.iter_predict(X, include_init=True), y_preds):
+            np.testing.assert_allclose(y1, y2, atol=0.1)
 
     def test_explained_ai_l1_loss_section_1_3(self):
         """Reproduces the results from https://explained.ai/gradient-boosting/L1-loss.html#sec:1.3"""
@@ -70,14 +74,14 @@ class TestBoostingRegressor(unittest.TestCase):
         model = sb.BoostingRegressor(
             loss=sb.losses.L1Loss(),
             base_estimator=tree.DecisionTreeRegressor(max_depth=1),
-            tree_flavor=True,
+            base_estimator_is_tree=True,
             n_estimators=3,
             learning_rate=1.0,
         )
         model.fit(X, y)
 
-        for i, y_pred in enumerate(model.iter_predict(X, include_init=True)):
-            np.testing.assert_allclose(y_preds[i], y_pred, atol=0.1)
+        for y1, y2 in zip(model.iter_predict(X, include_init=True), y_preds):
+            np.testing.assert_allclose(y1, y2, atol=0.1)
 
     def test_sklearn_l2(self):
         """Tests against the output of scikit-learn's GradientBoostingRegressor using MSE."""
@@ -86,7 +90,7 @@ class TestBoostingRegressor(unittest.TestCase):
         star = sb.BoostingRegressor(
             loss=sb.losses.L2Loss(),
             base_estimator=tree.DecisionTreeRegressor(max_depth=3, random_state=42),
-            tree_flavor=True,
+            base_estimator_is_tree=True,
             n_estimators=30,
             learning_rate=0.1,
         )
@@ -102,7 +106,7 @@ class TestBoostingRegressor(unittest.TestCase):
         scikit = scikit.fit(X, y)
 
         for y1, y2 in zip(star.iter_predict(X), scikit.staged_predict(X)):
-            self.assertTrue(np.mean(np.abs(y1 - y2)) < 1e-5)
+            np.testing.assert_allclose(y1, y2, rtol=1e-5)
 
     def test_sklearn_l1(self):
         """Tests against the output of scikit-learn's GradientBoostingRegressor using MAE."""
@@ -110,8 +114,8 @@ class TestBoostingRegressor(unittest.TestCase):
 
         star = sb.BoostingRegressor(
             loss=ScikitLearnL1Loss(),
-            base_estimator=tree.DecisionTreeRegressor(max_depth=2, random_state=42),
-            tree_flavor=True,
+            base_estimator=tree.DecisionTreeRegressor(max_depth=1, random_state=42),
+            base_estimator_is_tree=True,
             n_estimators=5,
             learning_rate=0.1,
         )
@@ -119,7 +123,7 @@ class TestBoostingRegressor(unittest.TestCase):
 
         scikit = ensemble.GradientBoostingRegressor(
             loss='lad',
-            max_depth=2,
+            max_depth=1,
             n_estimators=5,
             learning_rate=0.1,
             random_state=42
@@ -127,4 +131,4 @@ class TestBoostingRegressor(unittest.TestCase):
         scikit = scikit.fit(X, y)
 
         for y1, y2 in zip(star.iter_predict(X), scikit.staged_predict(X)):
-            self.assertTrue(np.mean(np.abs(y1 - y2)) < 1e-5)
+            np.testing.assert_allclose(y1, y2, rtol=1e-5)

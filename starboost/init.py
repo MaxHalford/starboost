@@ -4,7 +4,7 @@ import numpy as np
 from sklearn import base
 
 
-class SimpleEstimator(abc.ABC, base.BaseEstimator, base.RegressorMixin):
+class SimpleEstimator(abc.ABC, base.BaseEstimator):
 
     @abc.abstractmethod
     def make_estimate(self, y):
@@ -16,7 +16,7 @@ class SimpleEstimator(abc.ABC, base.BaseEstimator, base.RegressorMixin):
 
     def predict(self, X):
         n, k = len(X), len(self.estimate_)
-        return np.full(fill_value=self.estimate_, shape=(n, k), dtype=np.float32)
+        return np.full(fill_value=self.estimate_, shape=(n, k), dtype=np.float64)
 
 
 class MeanEstimator(SimpleEstimator):
