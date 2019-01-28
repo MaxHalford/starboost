@@ -19,6 +19,7 @@ __all__ = ['BoostingClassifier', 'BoostingRegressor']
 
 class BaseBoosting(abc.ABC, ensemble.BaseEnsemble):
     """Implements logic common to all other boosting classes."""
+
     def __init__(self, loss=None, base_estimator=None, base_estimator_is_tree=False,
                  n_estimators=30, init_estimator=None, line_searcher=None, learning_rate=0.1,
                  row_sampling=1.0, col_sampling=1.0, eval_metric=None, early_stopping_rounds=None,
