@@ -1,0 +1,480 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>starboost.boosting &#8212; StarBoost  documentation</title>
+    <link rel="stylesheet" href="../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
+    <script type="text/javascript" src="../../_static/documentation_options.js"></script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper"><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for starboost.boosting</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">abc</span>
+<span class="kn">import</span> <span class="nn">collections</span>
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">import</span> <span class="nn">itertools</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy.special</span> <span class="k">import</span> <span class="n">expit</span> <span class="k">as</span> <span class="n">sigmoid</span>
+<span class="kn">from</span> <span class="nn">sklearn</span> <span class="k">import</span> <span class="n">base</span>
+<span class="kn">from</span> <span class="nn">sklearn</span> <span class="k">import</span> <span class="n">ensemble</span>
+<span class="kn">from</span> <span class="nn">sklearn</span> <span class="k">import</span> <span class="n">preprocessing</span>
+<span class="kn">from</span> <span class="nn">sklearn</span> <span class="k">import</span> <span class="n">tree</span>
+<span class="kn">from</span> <span class="nn">sklearn</span> <span class="k">import</span> <span class="n">utils</span>
+
+<span class="kn">from</span> <span class="nn">.</span> <span class="k">import</span> <span class="n">losses</span>
+
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;BoostingClassifier&#39;</span><span class="p">,</span> <span class="s1">&#39;BoostingRegressor&#39;</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">BaseBoosting</span><span class="p">(</span><span class="n">abc</span><span class="o">.</span><span class="n">ABC</span><span class="p">,</span> <span class="n">ensemble</span><span class="o">.</span><span class="n">BaseEnsemble</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Implements logic common to all other boosting classes.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">loss</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">base_estimator</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">base_estimator_is_tree</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                 <span class="n">n_estimators</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">init_estimator</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">line_searcher</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">learning_rate</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+                 <span class="n">row_sampling</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">col_sampling</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">eval_metric</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">early_stopping_rounds</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">random_state</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">loss</span> <span class="o">=</span> <span class="n">loss</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_estimator</span> <span class="o">=</span> <span class="n">base_estimator</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_estimator_is_tree</span> <span class="o">=</span> <span class="n">base_estimator_is_tree</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_estimators</span> <span class="o">=</span> <span class="n">n_estimators</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">init_estimator</span> <span class="o">=</span> <span class="n">init_estimator</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line_searcher</span> <span class="o">=</span> <span class="n">line_searcher</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">learning_rate</span> <span class="o">=</span> <span class="n">learning_rate</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">row_sampling</span> <span class="o">=</span> <span class="n">row_sampling</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">col_sampling</span> <span class="o">=</span> <span class="n">col_sampling</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eval_metric</span> <span class="o">=</span> <span class="n">eval_metric</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">early_stopping_rounds</span> <span class="o">=</span> <span class="n">early_stopping_rounds</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">random_state</span> <span class="o">=</span> <span class="n">random_state</span>
+
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span> <span class="nf">_transform_y_pred</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@property</span>
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span> <span class="nf">_default_loss</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">eval_set</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Fit a gradient boosting procedure to a dataset.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            X (array-like or sparse matrix of shape (n_samples, n_features)): The training input</span>
+<span class="sd">                samples. Sparse matrices are accepted only if they are supported by the weak model.</span>
+<span class="sd">            y (array-like of shape (n_samples,)): The training target values (strings or integers</span>
+<span class="sd">                in classification, real numbers in regression).</span>
+<span class="sd">            eval_set (tuple of length 2, optional, default=None): The evaluation set is a tuple</span>
+<span class="sd">                ``(X_val, y_val)``. It has to respect the same conventions as ``X`` and ``y``.</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            self</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Verify the input parameters</span>
+        <span class="n">base_estimator</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_estimator</span>
+        <span class="n">base_estimator_is_tree</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_estimator_is_tree</span>
+        <span class="k">if</span> <span class="n">base_estimator</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">base_estimator</span> <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">DecisionTreeRegressor</span><span class="p">(</span><span class="n">max_depth</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">)</span>
+            <span class="n">base_estimator_is_tree</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">base_estimator</span><span class="p">,</span> <span class="n">base</span><span class="o">.</span><span class="n">RegressorMixin</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;base_estimator must be a RegressorMixin&#39;</span><span class="p">)</span>
+
+        <span class="n">loss</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">loss</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_default_loss</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">init_estimator_</span> <span class="o">=</span> <span class="n">base</span><span class="o">.</span><span class="n">clone</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">init_estimator</span> <span class="ow">or</span> <span class="n">loss</span><span class="o">.</span><span class="n">default_init_estimator</span><span class="p">)</span>
+
+        <span class="n">eval_metric</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">eval_metric</span> <span class="ow">or</span> <span class="n">loss</span>
+
+        <span class="n">line_searcher</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">line_searcher</span>
+        <span class="k">if</span> <span class="n">line_searcher</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">base_estimator_is_tree</span><span class="p">:</span>
+            <span class="n">line_searcher</span> <span class="o">=</span> <span class="n">loss</span><span class="o">.</span><span class="n">tree_line_searcher</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_rng</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">check_random_state</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">)</span>
+
+        <span class="c1"># At this point we assume the input data has been checked</span>
+        <span class="k">if</span> <span class="n">y</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">y</span> <span class="o">=</span> <span class="n">y</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Instantiate some training variables</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">estimators_</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line_searchers_</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">columns_</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eval_scores_</span> <span class="o">=</span> <span class="p">[]</span> <span class="k">if</span> <span class="n">eval_set</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="c1"># Use init_estimator for the first fit</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">init_estimator_</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+        <span class="n">y_pred</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">init_estimator_</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+
+        <span class="c1"># We keep training weak learners until we reach n_estimators or early stopping occurs</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_estimators</span><span class="p">):</span>
+
+            <span class="c1"># If row_sampling is lower than 1 then we&#39;re doing stochastic gradient descent</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">row_sampling</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">n_rows</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">row_sampling</span><span class="p">)</span>
+                <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">n_rows</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+            <span class="c1"># If col_sampling is lower than 1 then we only use a subset of the features</span>
+            <span class="n">cols</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">col_sampling</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">n_cols</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">col_sampling</span><span class="p">)</span>
+                <span class="n">cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">n_cols</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+            <span class="c1"># Subset X</span>
+            <span class="n">X_fit</span> <span class="o">=</span> <span class="n">X</span>
+            <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">X_fit</span> <span class="o">=</span> <span class="n">X_fit</span><span class="p">[</span><span class="n">rows</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="k">if</span> <span class="n">cols</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">X_fit</span> <span class="o">=</span> <span class="n">X_fit</span><span class="p">[:,</span> <span class="n">cols</span><span class="p">]</span>
+
+            <span class="c1"># Compute the gradients of the loss for the current prediction</span>
+            <span class="n">gradients</span> <span class="o">=</span> <span class="n">loss</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_transform_y_pred</span><span class="p">(</span><span class="n">y_pred</span><span class="p">))</span>
+
+            <span class="c1"># We will train one weak model per column in y</span>
+            <span class="n">estimators</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">line_searchers</span> <span class="o">=</span> <span class="p">[]</span>
+
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">gradient</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">gradients</span><span class="o">.</span><span class="n">T</span><span class="p">):</span>
+
+                <span class="c1"># Fit a weak learner to the negative gradient of the loss function</span>
+                <span class="n">estimator</span> <span class="o">=</span> <span class="n">base</span><span class="o">.</span><span class="n">clone</span><span class="p">(</span><span class="n">base_estimator</span><span class="p">)</span>
+                <span class="n">estimator</span> <span class="o">=</span> <span class="n">estimator</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X_fit</span><span class="p">,</span> <span class="o">-</span><span class="n">gradient</span> <span class="k">if</span> <span class="n">rows</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="o">-</span><span class="n">gradient</span><span class="p">[</span><span class="n">rows</span><span class="p">])</span>
+                <span class="n">estimators</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">estimator</span><span class="p">)</span>
+
+                <span class="c1"># Estimate the descent direction using the weak learner</span>
+                <span class="n">direction</span> <span class="o">=</span> <span class="n">estimator</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span> <span class="k">if</span> <span class="n">cols</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">X</span><span class="p">[:,</span> <span class="n">cols</span><span class="p">])</span>
+
+                <span class="c1"># Apply line search if a line searcher has been provided</span>
+                <span class="k">if</span> <span class="n">line_searcher</span><span class="p">:</span>
+                    <span class="n">ls</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">line_searcher</span><span class="p">)</span>
+                    <span class="n">ls</span> <span class="o">=</span> <span class="n">ls</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">y</span><span class="p">[:,</span> <span class="n">i</span><span class="p">],</span> <span class="n">y_pred</span><span class="p">[:,</span> <span class="n">i</span><span class="p">],</span> <span class="n">gradient</span><span class="p">,</span> <span class="n">direction</span><span class="p">)</span>
+                    <span class="n">line_searchers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ls</span><span class="p">)</span>
+                    <span class="n">direction</span> <span class="o">=</span> <span class="n">ls</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">direction</span><span class="p">)</span>
+
+                <span class="c1"># Move the predictions along the estimated descent direction</span>
+                <span class="n">y_pred</span><span class="p">[:,</span> <span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">learning_rate</span> <span class="o">*</span> <span class="n">direction</span>
+
+            <span class="c1"># Store the estimator and the step</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">estimators_</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">estimators</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">line_searchers</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">line_searchers_</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line_searchers</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">columns_</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cols</span><span class="p">)</span>
+
+            <span class="c1"># We&#39;re now at the end of a round so we can evaluate the model on the validation set</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">eval_set</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">X_val</span><span class="p">,</span> <span class="n">y_val</span> <span class="o">=</span> <span class="n">eval_set</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">eval_scores_</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">eval_metric</span><span class="p">(</span><span class="n">y_val</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X_val</span><span class="p">)))</span>
+
+            <span class="c1"># Check for early stopping</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">early_stopping_rounds</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">eval_scores_</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">early_stopping_rounds</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">eval_scores_</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">eval_scores_</span><span class="p">[</span><span class="o">-</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">early_stopping_rounds</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]:</span>
+                    <span class="k">break</span>
+
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">iter_predict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">include_init</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the predictions for ``X`` at every stage of the boosting procedure.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            X (array-like or sparse matrix of shape (n_samples, n_features): The input samples.</span>
+<span class="sd">                Sparse matrices are accepted only if they are supported by the weak model.</span>
+<span class="sd">            include_init (bool, default=False): If ``True`` then the prediction from</span>
+<span class="sd">                ``init_estimator`` will also be returned.</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            iterator of arrays of shape (n_samples,) containing the predicted values at each stage</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">utils</span><span class="o">.</span><span class="n">validation</span><span class="o">.</span><span class="n">check_is_fitted</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;init_estimator_&#39;</span><span class="p">)</span>
+        <span class="n">X</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">check_array</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">accept_sparse</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;csr&#39;</span><span class="p">,</span> <span class="s1">&#39;csc&#39;</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">force_all_finite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="n">y_pred</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">init_estimator_</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+
+        <span class="c1"># The user decides if the initial prediction should be included or not</span>
+        <span class="k">if</span> <span class="n">include_init</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">y_pred</span>
+
+        <span class="k">for</span> <span class="n">estimators</span><span class="p">,</span> <span class="n">line_searchers</span><span class="p">,</span> <span class="n">cols</span> <span class="ow">in</span> <span class="n">itertools</span><span class="o">.</span><span class="n">zip_longest</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">estimators_</span><span class="p">,</span>
+                                                                      <span class="bp">self</span><span class="o">.</span><span class="n">line_searchers_</span><span class="p">,</span>
+                                                                      <span class="bp">self</span><span class="o">.</span><span class="n">columns_</span><span class="p">):</span>
+
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">estimator</span><span class="p">,</span> <span class="n">line_searcher</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">zip_longest</span><span class="p">(</span><span class="n">estimators</span><span class="p">,</span>
+                                                                                 <span class="n">line_searchers</span> <span class="ow">or</span> <span class="p">[])):</span>
+
+                <span class="c1"># If we used column sampling then we have to make sure the columns of X are arranged</span>
+                <span class="c1"># in the correct order</span>
+                <span class="k">if</span> <span class="n">cols</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">direction</span> <span class="o">=</span> <span class="n">estimator</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">direction</span> <span class="o">=</span> <span class="n">estimator</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">[:,</span> <span class="n">cols</span><span class="p">])</span>
+
+                <span class="k">if</span> <span class="n">line_searcher</span><span class="p">:</span>
+                    <span class="n">direction</span> <span class="o">=</span> <span class="n">line_searcher</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">direction</span><span class="p">)</span>
+
+                <span class="n">y_pred</span><span class="p">[:,</span> <span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">learning_rate</span> <span class="o">*</span> <span class="n">direction</span>
+
+            <span class="k">yield</span> <span class="n">y_pred</span>
+
+    <span class="k">def</span> <span class="nf">predict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the predictions for ``X``.</span>
+
+<span class="sd">        Under the hood this method simply goes through the outputs of ``iter_predict`` and returns</span>
+<span class="sd">        the final one.</span>
+
+<span class="sd">        Arguments:</span>
+<span class="sd">            X (array-like or sparse matrix of shape (n_samples, n_features)): The input samples.</span>
+<span class="sd">                Sparse matrices are accepted only if they are supported by the weak model.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            array of shape (n_samples,) containing the predicted values.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">collections</span><span class="o">.</span><span class="n">deque</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iter_predict</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">maxlen</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="BoostingRegressor"><a class="viewcode-back" href="../../index.html#starboost.BoostingRegressor">[docs]</a><span class="k">class</span> <span class="nc">BoostingRegressor</span><span class="p">(</span><span class="n">BaseBoosting</span><span class="p">,</span> <span class="n">base</span><span class="o">.</span><span class="n">RegressorMixin</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Gradient boosting for regression.</span>
+
+<span class="sd">    Arguments:</span>
+<span class="sd">        loss (starboost.losses.Loss, default=starboost.loss.L2Loss)</span>
+<span class="sd">            The loss function that will be optimized. At every stage a weak learner will be fit to</span>
+<span class="sd">            the negative gradient of the loss. The provided value must be a class that at the very</span>
+<span class="sd">            least implements a ``__call__`` method and a ``gradient`` method.</span>
+<span class="sd">        base_estimator (sklearn.base.RegressorMixin, default=None): The weak learner. This must be</span>
+<span class="sd">            a regression model. If `None` then a decision stump will be used.</span>
+<span class="sd">        base_estimator_is_tree (bool, default=False): Indicates if the provided ``base_estimator``</span>
+<span class="sd">            is a tree model or not. Various boosting optimizations specific to trees can be made to</span>
+<span class="sd">            improve the overall performance.</span>
+<span class="sd">        n_estimators (int, default=30): The maximum number of weak learners to train. The final</span>
+<span class="sd">            number of trained weak learners will be lower than ``n_estimators`` if early stopping</span>
+<span class="sd">            happens.</span>
+<span class="sd">        init_estimator (sklearn.base.BaseEstimator, default=None): The estimator used to make the</span>
+<span class="sd">            initial guess. If ``None`` then the ``init_estimator`` property from the ``loss`` will</span>
+<span class="sd">            be used.</span>
+<span class="sd">        line_searcher (starboost.line_searchers.LineSearcher, default=None): A line searcher which</span>
+<span class="sd">            can be used to find the optimal step size during gradient descent. If you&#39;ve set</span>
+<span class="sd">            ``base_estimator_is_tree`` to ``True`` and are using one of StarBoost&#39;s losses then an optimal</span>
+<span class="sd">            line searcher will be used, meaning you safely set this field to ``None``.</span>
+<span class="sd">        learning_rate (float, default=0.1): The learning rate shrinks the contribution of each tree.</span>
+<span class="sd">            Specifically the descent direction estimated by each weak learner will be multiplied by</span>
+<span class="sd">            ``learning_rate``. There is a trade-off between learning_rate and ``n_estimators``.</span>
+<span class="sd">        row_sampling (float, default=1.0): The ratio of rows to sample at each stage.</span>
+<span class="sd">        col_sampling (float, default=1.0): The ratio of columns to sample at each stage.</span>
+<span class="sd">        eval_metric (function, default=None): The evaluation metric used to check for early</span>
+<span class="sd">            stopping. If ``None`` it will default to ``loss``.</span>
+<span class="sd">        random_state (int, RandomState instance or None, default=None): If int, ``random_state`` is</span>
+<span class="sd">            the seed used by the random number generator; if ``RandomState`` instance,</span>
+<span class="sd">            ``random_state`` is the random number generator; if ``None``, the random number</span>
+<span class="sd">            generator is the ``RandomState`` instance used by ``np.random``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_transform_y_pred</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">y_pred</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">_default_loss</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">losses</span><span class="o">.</span><span class="n">L2Loss</span><span class="p">()</span>
+
+<div class="viewcode-block" id="BoostingRegressor.fit"><a class="viewcode-back" href="../../index.html#starboost.BoostingRegressor.fit">[docs]</a>    <span class="k">def</span> <span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">eval_set</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">X</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">check_X_y</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;csr&#39;</span><span class="p">,</span> <span class="s1">&#39;csc&#39;</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">force_all_finite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">eval_set</span><span class="o">=</span><span class="n">eval_set</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="BoostingRegressor.iter_predict"><a class="viewcode-back" href="../../index.html#starboost.BoostingRegressor.iter_predict">[docs]</a>    <span class="k">def</span> <span class="nf">iter_predict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">include_init</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">y_pred</span> <span class="ow">in</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">iter_predict</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">include_init</span><span class="o">=</span><span class="n">include_init</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">y_pred</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span></div></div>
+
+
+<span class="k">def</span> <span class="nf">softmax</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Can be replaced once scipy 1.3 is released, although numeric stability should be checked.&quot;&quot;&quot;</span>
+    <span class="n">e_x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">e_x</span> <span class="o">/</span> <span class="n">e_x</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="BoostingClassifier"><a class="viewcode-back" href="../../index.html#starboost.BoostingClassifier">[docs]</a><span class="k">class</span> <span class="nc">BoostingClassifier</span><span class="p">(</span><span class="n">BaseBoosting</span><span class="p">,</span> <span class="n">base</span><span class="o">.</span><span class="n">ClassifierMixin</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Gradient boosting for regression.</span>
+
+<span class="sd">    Arguments:</span>
+<span class="sd">        loss (starboost.losses.Loss, default=starboost.loss.L2Loss)</span>
+<span class="sd">            The loss function that will be optimized. At every stage a weak learner will be fit to</span>
+<span class="sd">            the negative gradient of the loss. The provided value must be a class that at the very</span>
+<span class="sd">            least implements a ``__call__`` method and a ``gradient`` method.</span>
+<span class="sd">        base_estimator (sklearn.base.RegressorMixin, default=None): The weak learner. This must be</span>
+<span class="sd">            a regression model, even though the task is classification. If `None` then a decision</span>
+<span class="sd">            stump will be used.</span>
+<span class="sd">        base_estimator_is_tree (bool, default=False): Indicates if the provided ``base_estimator``</span>
+<span class="sd">            is a tree model or not. Various boosting optimizations specific to trees can be made to</span>
+<span class="sd">            improve the overall performance.</span>
+<span class="sd">        n_estimators (int, default=30): The maximum number of weak learners to train. The final</span>
+<span class="sd">            number of trained weak learners will be lower than ``n_estimators`` if early stopping</span>
+<span class="sd">            happens.</span>
+<span class="sd">        init_estimator (sklearn.base.BaseEstimator, default=None): The estimator used to make the</span>
+<span class="sd">            initial guess. If ``None`` then the ``init_estimator`` property from the ``loss`` will</span>
+<span class="sd">            be used.</span>
+<span class="sd">        line_searcher (starboost.line_searchers.LineSearcher, default=None): A line searcher which</span>
+<span class="sd">            can be used to find the optimal step size during gradient descent. If you&#39;ve set</span>
+<span class="sd">            ``base_estimator_is_tree`` to ``True`` and are using one of StarBoost&#39;s losses then an optimal</span>
+<span class="sd">            line searcher will be used, meaning you safely set this field to ``None``.</span>
+<span class="sd">        learning_rate (float, default=0.1): The learning rate shrinks the contribution of each tree.</span>
+<span class="sd">            Specifically the descent direction estimated by each weak learner will be multiplied by</span>
+<span class="sd">            ``learning_rate``. There is a trade-off between learning_rate and ``n_estimators``.</span>
+<span class="sd">        row_sampling (float, default=1.0): The ratio of rows to sample at each stage.</span>
+<span class="sd">        col_sampling (float, default=1.0): The ratio of columns to sample at each stage.</span>
+<span class="sd">        eval_metric (function, default=None): The evaluation metric used to check for early</span>
+<span class="sd">            stopping. If ``None`` it will default to ``loss``.</span>
+<span class="sd">        random_state (int, RandomState instance or None, default=None): If int, ``random_state`` is</span>
+<span class="sd">            the seed used by the random number generator; if ``RandomState`` instance,</span>
+<span class="sd">            ``random_state`` is the random number generator; if ``None``, the random number</span>
+<span class="sd">            generator is the ``RandomState`` instance used by ``np.random``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_transform_y_pred</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">classes_</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">softmax</span><span class="p">(</span><span class="n">y_pred</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">sigmoid</span><span class="p">(</span><span class="n">y_pred</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">_default_loss</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">losses</span><span class="o">.</span><span class="n">LogLoss</span><span class="p">()</span>
+
+<div class="viewcode-block" id="BoostingClassifier.fit"><a class="viewcode-back" href="../../index.html#starboost.BoostingClassifier.fit">[docs]</a>    <span class="k">def</span> <span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">eval_set</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="c1"># Check the inputs</span>
+        <span class="n">X</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">check_X_y</span><span class="p">(</span>
+            <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;csr&#39;</span><span class="p">,</span> <span class="s1">&#39;csc&#39;</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">force_all_finite</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">multi_output</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="n">utils</span><span class="o">.</span><span class="n">multiclass</span><span class="o">.</span><span class="n">check_classification_targets</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="c1"># We first encode the labels into integers starting from 0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">encoder_</span> <span class="o">=</span> <span class="n">preprocessing</span><span class="o">.</span><span class="n">LabelEncoder</span><span class="p">()</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoder_</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">classes_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoder_</span><span class="o">.</span><span class="n">classes_</span>
+        <span class="c1"># Next we one-hot encode the labels</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">binarizer_</span> <span class="o">=</span> <span class="n">preprocessing</span><span class="o">.</span><span class="n">LabelBinarizer</span><span class="p">(</span><span class="n">sparse_output</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">binarizer_</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">eval_set</span><span class="o">=</span><span class="n">eval_set</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="BoostingClassifier.iter_predict_proba"><a class="viewcode-back" href="../../index.html#starboost.BoostingClassifier.iter_predict_proba">[docs]</a>    <span class="k">def</span> <span class="nf">iter_predict_proba</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">include_init</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the predicted probabilities for ``X`` at every stage of the boosting procedure.</span>
+
+<span class="sd">        Arguments:</span>
+<span class="sd">            X (array-like or sparse matrix of shape (n_samples, n_features)): The input samples.</span>
+<span class="sd">                Sparse matrices are accepted only if they are supported by the weak model.</span>
+<span class="sd">            include_init (bool, default=False): If ``True`` then the prediction from</span>
+<span class="sd">                ``init_estimator`` will also be returned.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            iterator of arrays of shape (n_samples, n_classes) containing the predicted</span>
+<span class="sd">            probabilities at each stage</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">utils</span><span class="o">.</span><span class="n">validation</span><span class="o">.</span><span class="n">check_is_fitted</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;init_estimator_&#39;</span><span class="p">)</span>
+        <span class="n">X</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">check_array</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">accept_sparse</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;csr&#39;</span><span class="p">,</span> <span class="s1">&#39;csc&#39;</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">force_all_finite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="n">probas</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">classes_</span><span class="p">)),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">y_pred</span> <span class="ow">in</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">iter_predict</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">include_init</span><span class="o">=</span><span class="n">include_init</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">classes_</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">probas</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">sigmoid</span><span class="p">(</span><span class="n">y_pred</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">])</span>
+                <span class="n">probas</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.</span> <span class="o">-</span> <span class="n">probas</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">probas</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">softmax</span><span class="p">(</span><span class="n">y_pred</span><span class="p">)</span>
+            <span class="k">yield</span> <span class="n">probas</span></div>
+
+<div class="viewcode-block" id="BoostingClassifier.iter_predict"><a class="viewcode-back" href="../../index.html#starboost.BoostingClassifier.iter_predict">[docs]</a>    <span class="k">def</span> <span class="nf">iter_predict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">include_init</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the predicted classes for ``X`` at every stage of the boosting procedure.</span>
+
+<span class="sd">        Arguments:</span>
+<span class="sd">            X (array-like or sparse matrix of shape (n_samples, n_features)): The input samples.</span>
+<span class="sd">                Sparse matrices are accepted only if they are supported by the weak model.</span>
+<span class="sd">            include_init (bool, default=False): If ``True`` then the prediction from</span>
+<span class="sd">                ``init_estimator`` will also be returned.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            iterator of arrays of shape (n_samples, n_classes) containing the predicted classes at</span>
+<span class="sd">            each stage.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">probas</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iter_predict_proba</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">include_init</span><span class="o">=</span><span class="n">include_init</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoder_</span><span class="o">.</span><span class="n">inverse_transform</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">probas</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span></div>
+
+<div class="viewcode-block" id="BoostingClassifier.predict_proba"><a class="viewcode-back" href="../../index.html#starboost.BoostingClassifier.predict_proba">[docs]</a>    <span class="k">def</span> <span class="nf">predict_proba</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the predicted probabilities for ``X``.</span>
+
+<span class="sd">        Arguments:</span>
+<span class="sd">            X (array-like or sparse matrix of shape (n_samples, n_features)): The input samples.</span>
+<span class="sd">                Sparse matrices are accepted only if they are supported by the weak model.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            array of shape (n_samples, n_classes) containing the predicted probabilities.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">collections</span><span class="o">.</span><span class="n">deque</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iter_predict_proba</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">maxlen</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span></div></div>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &copy;2018, Max Halford.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+    <a href="https://github.com/MaxHalford/starboost" class="github">
+        <img style="position: absolute; top: 0; right: 0; border: 0;" src="https://s3.amazonaws.com/github/ribbons/forkme_right_darkblue_121621.png" alt="Fork me on GitHub"  class="github"/>
+    </a>
+    
+
+    
+  </body>
+</html>
