@@ -145,7 +145,7 @@ class L1Loss(Loss):
 class LogLoss(Loss):
     """Computes the logarithmic loss.
 
-    Mathematically, the L1 loss is defined as
+    Mathematically, the log loss is defined as
 
     :math:`L = -\\frac{1}{n} \\sum_i^n y_i log(p_i) + (1-y_i) log(1-p_i)`
 

@@ -252,7 +252,7 @@ class BoostingRegressor(BaseBoosting, base.RegressorMixin):
             stopping. If ``None`` it will default to ``loss``.
         random_state (int, RandomState instance or None, default=None): If int, ``random_state`` is
             the seed used by the random number generator; if ``RandomState`` instance,
-            ``random_state`` is the random number generator; If ``None``, the random number
+            ``random_state`` is the random number generator; if ``None``, the random number
             generator is the ``RandomState`` instance used by ``np.random``.
     """
 
@@ -311,7 +311,7 @@ class BoostingClassifier(BaseBoosting, base.ClassifierMixin):
             stopping. If ``None`` it will default to ``loss``.
         random_state (int, RandomState instance or None, default=None): If int, ``random_state`` is
             the seed used by the random number generator; if ``RandomState`` instance,
-            ``random_state`` is the random number generator; If ``None``, the random number
+            ``random_state`` is the random number generator; if ``None``, the random number
             generator is the ``RandomState`` instance used by ``np.random``.
     """
 
